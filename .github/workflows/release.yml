@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate release prerequisites
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_TOKEN}" ]; then
+            echo "GITHUB_TOKEN is required to publish GitHub releases."
+            exit 1
+          fi
+
+          case "${GITHUB_REF_NAME}" in
+            v[0-9]*.[0-9]*.[0-9]* | v[0-9]*.[0-9]*.[0-9]*-*)
+              ;;
+            *)
+              echo "Release tags must use semantic versions like v1.2.3."
+              exit 1
+              ;;
+          esac
+
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "Full git history is required for deterministic changelog generation."
+            exit 1
+          fi
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Verify repository before release
+        run: go test ./...
+
+      - name: Check for an existing GitHub release
+        id: existing-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_err="$(mktemp)"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" >/dev/null 2>"${release_err}"; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "A release for ${GITHUB_REF_NAME} already exists; skipping publish to keep reruns idempotent."
+            exit 0
+          fi
+
+          if grep -q "HTTP 404" "${release_err}"; then
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          cat "${release_err}"
+          exit 1
+
+      - name: Publish GitHub release with generated notes
+        if: steps.existing-release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --generate-notes \
+            --title "${GITHUB_REF_NAME}"

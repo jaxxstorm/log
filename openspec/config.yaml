@@ -1,0 +1,43 @@
+schema: spec-driven
+
+
+context: |
+  This repo is a logging wrapper in Go around uber's zap library
+  It provides a simple interface for logging with structured data and supports multiple log levels.
+  The main features include:
+  - Simple API for logging messages with structured data
+  - Support for multiple log levels (debug, info, warn, error)
+  - Integration with zap's core logging capabilities
+  - Customizable log formatting and output options
+  - Easy integration with existing Go projects
+  - Focus on performance and minimal overhead in logging operations
+  - It defaults to pretty logging when we have a tty, and JSON logging when we don't
+  - it allows you to easily add fields to your logs, and it will automatically include caller information and timestamps.
+  - The main goal of this project is to provide a simple and efficient logging solution for Go developers, leveraging the power of zap while maintaining an easy-to-use interface.
+  - it uses github.com/charmbracelet/lipgloss for pretty logging when using stdout, and it uses github.com/uber-go/zap for JSON logging.
+  - It has an example implementation
+  - It is mainly designed to be used by jaxxstorm
+  - Can be used by cli tools, web applications and anything else
+
+
+rules:
+  proposal:
+    - Each proposal must include a clear motivation or problem statement.
+    - Each proposal must define proposed behavior in normative terms.
+    - Each proposal must describe idempotency and retry semantics.
+    - Each proposal must describe failure modes and recovery or compensation expectations.
+    - Each proposal must include observability and audit requirements.
+    - Each proposal must include a test plan summary that prioritizes unit tests.
+
+  specs:
+    - Specs are the source of truth; code must follow specs.
+    - Use clear MUST/SHOULD/MAY language for requirements.
+    
+
+  design:
+    - Design docs should explain architecture choices and key tradeoffs.
+    - Design docs should identify affected components, dependencies, and migration concerns.
+
+  tasks:
+    - Tasks should be implementation-focused, testable, and ordered for execution.
+    - Tasks should include verification work covering unit and integration tests.
