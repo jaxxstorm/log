@@ -1,18 +1,26 @@
-package log_test
+package log
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
-
-	loglib "github.com/jaxxstorm/log"
 )
+
+type syncBuffer struct {
+	bytes.Buffer
+	syncErr error
+}
+
+func (b *syncBuffer) Sync() error {
+	return b.syncErr
+}
 
 func TestNewDefaultsToJSONForNonTTYOutput(t *testing.T) {
 	var output bytes.Buffer
 
-	logger, err := loglib.New(loglib.Config{Output: &output})
+	logger, err := New(Config{Output: &output})
 	if err != nil {
 		t.Fatalf("new logger: %v", err)
 	}
@@ -20,7 +28,7 @@ func TestNewDefaultsToJSONForNonTTYOutput(t *testing.T) {
 		_ = logger.Close()
 	})
 
-	logger.Info("hello", loglib.String("service", "api"))
+	logger.Info("hello", String("service", "api"))
 
 	record := decodeRecord(t, output.Bytes())
 	if got := record["level"]; got != "info" {
@@ -43,9 +51,9 @@ func TestNewDefaultsToJSONForNonTTYOutput(t *testing.T) {
 func TestLevelFilteringSuppressesLowerPriorityMessages(t *testing.T) {
 	var output bytes.Buffer
 
-	logger, err := loglib.New(loglib.Config{
+	logger, err := New(Config{
 		Output: &output,
-		Level:  loglib.WarnLevel,
+		Level:  WarnLevel,
 	})
 	if err != nil {
 		t.Fatalf("new logger: %v", err)
@@ -68,7 +76,7 @@ func TestLevelFilteringSuppressesLowerPriorityMessages(t *testing.T) {
 func TestWithFieldsAllowsPerCallOverride(t *testing.T) {
 	var output bytes.Buffer
 
-	logger, err := loglib.New(loglib.Config{Output: &output})
+	logger, err := New(Config{Output: &output})
 	if err != nil {
 		t.Fatalf("new logger: %v", err)
 	}
@@ -76,8 +84,8 @@ func TestWithFieldsAllowsPerCallOverride(t *testing.T) {
 		_ = logger.Close()
 	})
 
-	child := logger.With(loglib.String("request_id", "initial"), loglib.String("component", "worker"))
-	child.Info("override", loglib.String("request_id", "override"), loglib.Int("attempt", 2))
+	child := logger.With(String("request_id", "initial"), String("component", "worker"))
+	child.Info("override", String("request_id", "override"), Int("attempt", 2))
 
 	record := decodeRecord(t, output.Bytes())
 	if got := record["request_id"]; got != "override" {
@@ -93,9 +101,9 @@ func TestWithFieldsAllowsPerCallOverride(t *testing.T) {
 
 func TestFormatOverrideSupportsPrettyAndJSON(t *testing.T) {
 	var prettyOutput bytes.Buffer
-	prettyLogger, err := loglib.New(loglib.Config{
+	prettyLogger, err := New(Config{
 		Output: &prettyOutput,
-		Format: loglib.PrettyFormat,
+		Format: PrettyFormat,
 	})
 	if err != nil {
 		t.Fatalf("new pretty logger: %v", err)
@@ -104,7 +112,7 @@ func TestFormatOverrideSupportsPrettyAndJSON(t *testing.T) {
 		_ = prettyLogger.Close()
 	})
 
-	prettyLogger.Info("started", loglib.String("component", "cli"))
+	prettyLogger.Info("started", String("component", "cli"))
 	prettyLine := strings.TrimSpace(prettyOutput.String())
 	for _, want := range []string{"INFO", "started", "component=cli"} {
 		if !strings.Contains(prettyLine, want) {
@@ -113,9 +121,9 @@ func TestFormatOverrideSupportsPrettyAndJSON(t *testing.T) {
 	}
 
 	var jsonOutput bytes.Buffer
-	jsonLogger, err := loglib.New(loglib.Config{
+	jsonLogger, err := New(Config{
 		Output: &jsonOutput,
-		Format: loglib.JSONFormat,
+		Format: JSONFormat,
 	})
 	if err != nil {
 		t.Fatalf("new json logger: %v", err)
@@ -124,7 +132,7 @@ func TestFormatOverrideSupportsPrettyAndJSON(t *testing.T) {
 		_ = jsonLogger.Close()
 	})
 
-	jsonLogger.Info("started", loglib.String("component", "cli"))
+	jsonLogger.Info("started", String("component", "cli"))
 	record := decodeRecord(t, jsonOutput.Bytes())
 	if got := record["component"]; got != "cli" {
 		t.Fatalf("component = %v, want cli", got)
@@ -135,15 +143,15 @@ func TestFormatOverrideSupportsPrettyAndJSON(t *testing.T) {
 }
 
 func TestInvalidConfigReturnsError(t *testing.T) {
-	if _, err := loglib.New(loglib.Config{Level: loglib.Level("trace")}); err == nil {
+	if _, err := New(Config{Level: Level("trace")}); err == nil {
 		t.Fatal("expected invalid level to fail")
 	}
 
-	if _, err := loglib.New(loglib.Config{Format: loglib.Format("console")}); err == nil {
+	if _, err := New(Config{Format: Format("console")}); err == nil {
 		t.Fatal("expected invalid format to fail")
 	}
 
-	if _, err := loglib.New(loglib.Config{
+	if _, err := New(Config{
 		Output:     &bytes.Buffer{},
 		OutputPath: "test.log",
 	}); err == nil {
@@ -152,9 +160,134 @@ func TestInvalidConfigReturnsError(t *testing.T) {
 }
 
 func TestOutputInitializationFailureReturnsError(t *testing.T) {
-	_, err := loglib.New(loglib.Config{OutputPath: "/tmp/does-not-exist/log/output.json"})
+	_, err := New(Config{OutputPath: "/tmp/does-not-exist/log/output.json"})
 	if err == nil {
 		t.Fatal("expected invalid output path to fail")
+	}
+}
+
+func TestFatalLevelFiltersLowerSeverityMessages(t *testing.T) {
+	var output syncBuffer
+
+	logger, err := New(Config{
+		Output: &output,
+		Format: JSONFormat,
+		Level:  FatalLevel,
+	})
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	logger.Error("ignore me")
+	if output.Len() != 0 {
+		t.Fatalf("expected error log to be filtered, got %q", output.String())
+	}
+}
+
+func TestFatalWritesStructuredJSONAndExits(t *testing.T) {
+	var output syncBuffer
+
+	logger, err := New(Config{
+		Output: &output,
+		Format: JSONFormat,
+		Level:  FatalLevel,
+	})
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	exitCode := 0
+	logger.exitFn = func(code int) {
+		exitCode = code
+	}
+
+	logger.Fatal("fatal failure", String("component", "cli"))
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+
+	record := decodeRecord(t, output.Bytes())
+	if got := record["level"]; got != "fatal" {
+		t.Fatalf("level = %v, want fatal", got)
+	}
+	if got := record["msg"]; got != "fatal failure" {
+		t.Fatalf("msg = %v, want fatal failure", got)
+	}
+	if got := record["component"]; got != "cli" {
+		t.Fatalf("component = %v, want cli", got)
+	}
+	if record["ts"] == nil {
+		t.Fatal("expected timestamp in record")
+	}
+	if record["caller"] == nil {
+		t.Fatal("expected caller in record")
+	}
+}
+
+func TestFatalPrettyOutputUsesExplicitLabel(t *testing.T) {
+	var output syncBuffer
+
+	logger, err := New(Config{
+		Output: &output,
+		Format: PrettyFormat,
+	})
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	exitCode := 0
+	logger.exitFn = func(code int) {
+		exitCode = code
+	}
+
+	logger.Fatal("fatal failure", String("component", "cli"))
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+
+	line := strings.TrimSpace(output.String())
+	for _, want := range []string{"FATAL", "fatal failure", "component=cli"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("pretty output %q missing %q", line, want)
+		}
+	}
+}
+
+func TestFatalStillExitsWhenSyncOrCloseFails(t *testing.T) {
+	output := &syncBuffer{syncErr: errors.New("sync failed")}
+
+	logger, err := New(Config{
+		Output: output,
+		Format: JSONFormat,
+	})
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+
+	exitCode := 0
+	closeCalled := false
+	logger.exitFn = func(code int) {
+		exitCode = code
+	}
+	logger.closeFn = func() error {
+		closeCalled = true
+		return errors.New("close failed")
+	}
+
+	logger.Fatal("fatal failure")
+
+	if !closeCalled {
+		t.Fatal("expected fatal path to call close function")
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+
+	record := decodeRecord(t, output.Bytes())
+	if got := record["level"]; got != "fatal" {
+		t.Fatalf("level = %v, want fatal", got)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 func main() {
 	var (
 		format = flag.String("format", "auto", "output format: auto, pretty, or json")
-		level  = flag.String("level", "info", "log level: debug, info, warn, or error")
+		level  = flag.String("level", "info", "log level: debug, info, warn, error, or fatal")
 	)
 	flag.Parse()
 

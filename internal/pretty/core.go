@@ -26,6 +26,7 @@ type styles struct {
 	info      lipgloss.Style
 	warn      lipgloss.Style
 	err       lipgloss.Style
+	fatal     lipgloss.Style
 }
 
 func NewCore(writer zapcore.WriteSyncer, level zapcore.LevelEnabler) *Core {
@@ -41,6 +42,7 @@ func NewCore(writer zapcore.WriteSyncer, level zapcore.LevelEnabler) *Core {
 			info:      lipgloss.NewStyle().Foreground(lipgloss.Color("10")).SetString("INFO"),
 			warn:      lipgloss.NewStyle().Foreground(lipgloss.Color("11")).SetString("WARN"),
 			err:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")).SetString("ERROR"),
+			fatal:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).SetString("FATAL"),
 		},
 	}
 }
@@ -121,6 +123,8 @@ func (c *Core) renderLevel(level zapcore.Level) string {
 		return c.styles.warn.String()
 	case zapcore.ErrorLevel:
 		return c.styles.err.String()
+	case zapcore.FatalLevel:
+		return c.styles.fatal.String()
 	default:
 		return strings.ToUpper(level.String())
 	}

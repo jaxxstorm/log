@@ -20,6 +20,7 @@ const (
 	InfoLevel  Level = "info"
 	WarnLevel  Level = "warn"
 	ErrorLevel Level = "error"
+	FatalLevel Level = "fatal"
 )
 
 type Format string
@@ -95,6 +96,8 @@ func (c Config) level() (zapcore.Level, error) {
 		return zapcore.WarnLevel, nil
 	case ErrorLevel:
 		return zapcore.ErrorLevel, nil
+	case FatalLevel:
+		return zapcore.FatalLevel, nil
 	default:
 		return zapcore.InfoLevel, fmt.Errorf("unsupported level %q", c.Level)
 	}

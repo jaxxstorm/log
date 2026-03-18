@@ -8,7 +8,7 @@ This repository is for personal use. I am not looking for outside pull requests.
 ## What it does
 
 - Defaults to pretty output on a TTY and JSON when output is redirected.
-- Supports `debug`, `info`, `warn`, and `error` levels.
+- Supports `debug`, `info`, `warn`, `error`, and `fatal` levels.
 - Adds caller information and timestamps automatically.
 - Lets you attach persistent structured fields with `With(...)`.
 - Can write to any `io.Writer` or directly to a file path.
@@ -107,7 +107,10 @@ defer logger.Close()
 
 `log.Config` supports:
 
-- `Level`: `debug`, `info`, `warn`, or `error`
+- `Level`: `debug`, `info`, `warn`, `error`, or `fatal`
+
+`fatal` emits the log entry, performs best-effort final sync, and then exits the
+process with status code `1`.
 - `Format`: `auto`, `pretty`, or `json`
 - `Output`: any `io.Writer`
 - `OutputPath`: a file to append logs to

@@ -5,13 +5,17 @@ import (
 	"os"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Logger struct {
 	base    *zap.Logger
 	fields  []Field
 	closeFn func() error
+	exitFn  func(int)
 }
+
+type noopFatalHook struct{}
 
 func New(config Config) (*Logger, error) {
 	resolved, err := config.resolve()
@@ -19,13 +23,25 @@ func New(config Config) (*Logger, error) {
 		return nil, err
 	}
 
-	base := zap.New(resolved.core(), zap.AddCaller(), zap.AddCallerSkip(1))
+	base := newBaseLogger(resolved.core())
 
 	return &Logger{
 		base:    base,
 		closeFn: resolved.closeFn,
+		exitFn:  os.Exit,
 	}, nil
 }
+
+func newBaseLogger(core zapcore.Core) *zap.Logger {
+	return zap.New(
+		core,
+		zap.AddCaller(),
+		zap.AddCallerSkip(1),
+		zap.WithFatalHook(noopFatalHook{}),
+	)
+}
+
+func (noopFatalHook) OnWrite(*zapcore.CheckedEntry, []zapcore.Field) {}
 
 func (l *Logger) With(fields ...Field) *Logger {
 	if l == nil {
@@ -36,6 +52,7 @@ func (l *Logger) With(fields ...Field) *Logger {
 		base:    l.base,
 		fields:  mergeFields(l.fields, fields),
 		closeFn: l.closeFn,
+		exitFn:  l.exitFn,
 	}
 }
 
@@ -61,6 +78,16 @@ func (l *Logger) Error(msg string, fields ...Field) {
 	l.log(func(logger *zap.Logger, msg string, fields ...zap.Field) {
 		logger.Error(msg, fields...)
 	}, msg, fields...)
+}
+
+func (l *Logger) Fatal(msg string, fields ...Field) {
+	if l == nil || l.base == nil {
+		return
+	}
+
+	merged := mergeFields(l.fields, fields)
+	l.base.Fatal(msg, toZapFields(merged)...)
+	l.finalizeFatal()
 }
 
 func (l *Logger) Sync() error {
@@ -94,6 +121,18 @@ func (l *Logger) log(fn func(*zap.Logger, string, ...zap.Field), msg string, fie
 
 	merged := mergeFields(l.fields, fields)
 	fn(l.base, msg, toZapFields(merged)...)
+}
+
+func (l *Logger) finalizeFatal() {
+	_ = l.Sync()
+
+	if l.closeFn != nil {
+		_ = l.closeFn()
+	}
+
+	if l.exitFn != nil {
+		l.exitFn(1)
+	}
 }
 
 func mergeFields(base []Field, extras []Field) []Field {
